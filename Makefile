@@ -1,6 +1,64 @@
 # Makefile for RISC-V toolchain; run 'make help' for usage. set XLEN here to 32 or 64.
 
-XLEN     := 64
+BOARD    ?= genesys2
+target   ?= cv64a6_imafdc_sv39
+
+# e.g., cv64a6
+CVA6_TYPE=$(firstword $(subst _, ,$(target)))
+# e.g., imafdc
+ISA_TYPE=$(word 2,$(subst _, ,$(target)))
+
+SED ?= sed
+
+ifeq ($(CVA6_TYPE), cv64a6)
+XLEN := 64
+CVA6_IS_CV64A6 := y
+CVA6_IS_CV32A6 := n
+else
+XLEN := 32
+CVA6_IS_CV32A6 := y
+CVA6_IS_CV64A6 := n
+endif
+
+ifeq ($(ISA_TYPE), imafdc)
+CVA6_HAS_FPU := y
+else
+CVA6_HAS_FPU := n
+endif
+
+$(info CVA6_TYPE is $(CVA6_TYPE) ISA_TYPE is $(ISA_TYPE) XLEN is $(XLEN))
+
+ifeq ($(BOARD), nexys_video)
+DRAM_SIZE_64 ?= 0x20000000 #512MB
+DRAM_SIZE_32 ?= 0x08000000 #128MB
+CLOCK_FREQUENCY ?= 25000000 #25MHz
+HALF_CLOCK_FREQUENCY ?= 12500000 #12.5MHz
+UART_BITRATE ?= 57600
+HAS_ETHERNET ?= 0
+else
+ifeq ($(BOARD), arty_a7_100)
+DRAM_SIZE_64 ?= 0x10000000 #256MB
+DRAM_SIZE_32 ?= 0x08000000 #128MB
+CLOCK_FREQUENCY ?= 25000000 #25MHz
+HALF_CLOCK_FREQUENCY ?= 12500000 #12.5MHz
+UART_BITRATE ?= 57600
+HAS_ETHERNET ?= 0
+else
+DRAM_SIZE_64 ?= 0x40000000 #1GB
+DRAM_SIZE_32 ?= 0x08000000 #128MB
+CLOCK_FREQUENCY ?= 50000000 #50MHz
+HALF_CLOCK_FREQUENCY ?= 25000000 #25MHz
+UART_BITRATE ?= 115200
+HAS_ETHERNET ?= 1
+endif
+endif
+
+ifeq ($(HAS_ETHERNET), 1)
+SED_DELETE_OPT = -e "/DELETE_ETH/d"
+else
+SED_DELETE_OPT =
+endif
+
 ROOT     := $(patsubst %/,%, $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 RISCV    := $(PWD)/install$(XLEN)
 DEST     := $(abspath $(RISCV))
@@ -18,9 +76,9 @@ PLATFORM := fpga/ariane
 FW_FDT_PATH ?=
 sbi-mk = PLATFORM=$(PLATFORM) CROSS_COMPILE=$(TOOLCHAIN_PREFIX) $(if $(FW_FDT_PATH),FW_FDT_PATH=$(FW_FDT_PATH),)
 ifeq ($(XLEN), 32)
-sbi-mk += PLATFORM_RISCV_ISA=rv32ima PLATFORM_RISCV_XLEN=32
+sbi-mk += PLATFORM_RISCV_ISA=rv32$(ISA_TYPE) PLATFORM_RISCV_XLEN=32
 else
-sbi-mk += PLATFORM_RISCV_ISA=rv64imafdc PLATFORM_RISCV_XLEN=64
+sbi-mk += PLATFORM_RISCV_ISA=rv64$(ISA_TYPE) PLATFORM_RISCV_XLEN=64
 endif
 
 # U-Boot options
@@ -48,9 +106,9 @@ tests-mk         		= -j$(NR_CORES)
 buildroot-mk       		= -j$(NR_CORES)
 
 # linux image
-buildroot_defconfig = configs/buildroot$(XLEN)_defconfig
-linux_defconfig = configs/linux$(XLEN)_defconfig
-busybox_defconfig = configs/busybox$(XLEN).config
+buildroot_defconfig = configs/.buildroot_defconfig
+linux_defconfig = configs/.linux_defconfig
+busybox_defconfig = configs/.busybox.config
 
 install-dir:
 	mkdir -p $(RISCV)
@@ -71,6 +129,24 @@ tests: install-dir $(CC)
 	make $(tests-mk);\
 	make install;\
 	cd $(ROOT)
+
+$(buildroot_defconfig): configs/buildroot_defconfig
+	$(SED) -e "s/CVA6_IS_CV64A6/$(CVA6_IS_CV64A6)/g" \
+               -e "s/CVA6_IS_CV32A6/$(CVA6_IS_CV32A6)/g" \
+               -e "s/CVA6_HAS_FPU/$(CVA6_HAS_FPU)/g" \
+               $(SED_DELETE_OPT) $< > $@
+
+$(linux_defconfig): configs/linux_defconfig
+	$(SED) -e "s/CVA6_IS_CV64A6/$(CVA6_IS_CV64A6)/g" \
+               -e "s/CVA6_IS_CV32A6/$(CVA6_IS_CV32A6)/g" \
+               -e "s/CVA6_HAS_FPU/$(CVA6_HAS_FPU)/g" \
+               $(SED_DELETE_OPT) $< > $@
+
+$(busybox_defconfig): configs/busybox.config
+	$(SED) -e "s/CVA6_IS_CV64A6/$(CVA6_IS_CV64A6)/g" \
+               -e "s/CVA6_IS_CV32A6/$(CVA6_IS_CV32A6)/g" \
+               -e "s/CVA6_HAS_FPU/$(CVA6_HAS_FPU)/g" \
+               $(SED_DELETE_OPT) $< > $@
 
 $(CC): $(buildroot_defconfig) $(linux_defconfig) $(busybox_defconfig)
 	make -C buildroot defconfig BR2_DEFCONFIG=../$(buildroot_defconfig)
@@ -107,7 +183,18 @@ $(RISCV)/u-boot.bin: u-boot/u-boot.bin
 	mkdir -p $(RISCV)
 	cp $< $@
 
-$(MKIMAGE) u-boot/u-boot.bin: $(CC)
+u-boot/arch/riscv/dts/cv$(XLEN)a6.dts: u-boot/arch/riscv/dts/cv$(XLEN)a6.dts.in
+	$(SED) -e "s/DRAM_SIZE_64/$(DRAM_SIZE_64)/g" \
+               -e "s/DRAM_SIZE_32/$(DRAM_SIZE_32)/g" \
+               -e "s/HALF_CLOCK_FREQUENCY/$(HALF_CLOCK_FREQUENCY)/g" \
+               -e "s/CLOCK_FREQUENCY/$(CLOCK_FREQUENCY)/g" \
+               -e "s/UART_BITRATE/$(UART_BITRATE)/g" \
+               $(SED_DELETE_OPT) $< > $@
+	cat $@
+
+# TODO name genesysII kept for now
+# DTS update makes sure this works for all boards
+$(MKIMAGE) u-boot/u-boot.bin: $(CC) u-boot/arch/riscv/dts/cv$(XLEN)a6.dts
 	make -C u-boot openhwgroup_cv$(XLEN)a6_genesysII_defconfig
 	make -C u-boot CROSS_COMPILE=$(TOOLCHAIN_PREFIX)
 
@@ -151,6 +238,10 @@ spike_payload: $(RISCV)/spike_fw_payload.elf
 images: $(CC) $(RISCV)/fw_payload.bin $(RISCV)/uImage
 
 clean:
+	rm -rf $(buildroot_defconfig)
+	rm -rf $(linux_defconfig)
+	rm -rf $(busybox_defconfig)
+	rm -rf u-boot/arch/riscv/dts/cv$(XLEN)a6.dts
 	rm -rf $(RISCV)/vmlinux cachetest/*.elf rootfs/tetris rootfs/cachetest.elf
 	rm -rf $(RISCV)/fw_payload.bin $(RISCV)/uImage $(RISCV)/Image.gz
 	make -C u-boot clean

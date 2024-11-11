@@ -8,3 +8,6 @@ riscv-fesvr/build
 riscv-isa-sim/build
 riscv-pk/build
 riscv-tests/build
+configs/.buildroot_defconfig
+configs/.busybox.config
+configs/.linux_defconfig
