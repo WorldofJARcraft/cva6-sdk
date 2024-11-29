@@ -192,10 +192,9 @@ u-boot/arch/riscv/dts/cv$(XLEN)a6.dts: u-boot/arch/riscv/dts/cv$(XLEN)a6.dts.in
                $(SED_DELETE_OPT) $< > $@
 	cat $@
 
-# TODO name genesysII kept for now
 # DTS update makes sure this works for all boards
 $(MKIMAGE) u-boot/u-boot.bin: $(CC) u-boot/arch/riscv/dts/cv$(XLEN)a6.dts
-	make -C u-boot openhwgroup_cv$(XLEN)a6_genesysII_defconfig
+	make -C u-boot openhwgroup_cv$(XLEN)a6_$(BOARD)_defconfig
 	make -C u-boot CROSS_COMPILE=$(TOOLCHAIN_PREFIX)
 
 # OpenSBI with u-boot as payload

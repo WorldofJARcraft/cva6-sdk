@@ -30,6 +30,16 @@ $ git submodule update --init --recursive
 $ make images
 ```
 
+## Target Selection
+
+The default target is the Genesys2 board running the `cv64a6_imafdc` configuration.
+The target can be changed using the `BOARD`, `XLEN` and `target` environment variables, akin to the [cva6 FPGA build](https://github.com/openhwgroup/cva6).
+Supported configurations are:
+- `BOARD`: `genesys2`, `arty_a7_100`
+- `target`: `cv64a6_imafdc_sv39`, `cv64a6_imac_sv39`, `cv32a6_imac_sv0`, `cv32a6_imac_sv32`, `cv32a6_imafc_sv32`, `cv32a6_ima_sv32_fpga`
+- `XLEN`: `32`, `64`
+
+
 ## Environment Variables
 
 If you want to cross compile other projects for this target you can add `buildroot/output/host/bin/` to your path in order to later make use of the installed tools after compiling them with :
